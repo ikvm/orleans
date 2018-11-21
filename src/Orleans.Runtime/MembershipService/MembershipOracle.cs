@@ -55,8 +55,6 @@ namespace Orleans.Runtime.MembershipService
             timerLogger = this.loggerFactory.CreateLogger<GrainTimer>();
         }
 
-        #region ISiloStatusOracle Members
-
         public async Task Start()
         {
             try
@@ -318,10 +316,6 @@ namespace Orleans.Runtime.MembershipService
             return membershipOracleData.UnSubscribeFromSiloStatusEvents(observer);
         }
 
-        #endregion
-
-
-        #region IMembershipService Members
 
         // Treat this gossip msg as a trigger to read the table (and just ignore the input parameters).
         // This simplified a lot of the races when we get gossip info which is outdated with the table truth.
@@ -349,10 +343,6 @@ namespace Orleans.Runtime.MembershipService
             // do not do anything here -- simply returning back will indirectly notify the prober that this silo is alive
             return Task.CompletedTask;
         }
-
-        #endregion
-
-        #region Table update/insert processing
 
         private Task<bool> MembershipExecuteWithRetries(
             Func<int, Task<bool>> taskFunction, 
@@ -476,8 +466,15 @@ namespace Orleans.Runtime.MembershipService
             myEntry.Status = newStatus;
             myEntry.IAmAliveTime = now;
 
-            if (newStatus == SiloStatus.Active && this.clusterMembershipOptions.ValidateInitialConnectivity)
-                await GetJoiningPreconditionPromise(table);
+            if (newStatus == SiloStatus.Active)
+            {
+                if (this.clusterMembershipOptions.ValidateInitialConnectivity)
+                    await GetJoiningPreconditionPromise(table);
+                else
+                    logger.Warn(
+                        ErrorCode.MembershipSendingPreJoinPing,
+                        $"${nameof(ClusterMembershipOptions.ValidateInitialConnectivity)} is set to false. This is NOT recommended for a production environment.");
+            }
             
             TableVersion next = table.Version.Next();
             if (myEtag != null) // no previous etag for my entry -> its the first write to this entry, so insert instead of update.
@@ -529,8 +526,6 @@ namespace Orleans.Runtime.MembershipService
                 throw;
             }
         }
-
-        #endregion
 
         private async Task ProcessTableUpdate(MembershipTableData table, string caller, bool logAtInfoLevel = false)
         {
@@ -1141,8 +1136,6 @@ namespace Orleans.Runtime.MembershipService
             }
         }
 
-        #region Implementation of IHealthCheckParticipant
-
         public bool CheckHealth(DateTime lastCheckTime)
         {
             bool ok = (timerGetTableUpdates != null) && timerGetTableUpdates.CheckTimerFreeze(lastCheckTime);
@@ -1150,8 +1143,6 @@ namespace Orleans.Runtime.MembershipService
             ok &= (timerIAmAliveUpdateInTable != null) && timerIAmAliveUpdateInTable.CheckTimerFreeze(lastCheckTime);
             return ok;
         }
-
-        #endregion
 
         private IMembershipService GetOracleReference(SiloAddress silo)
         {
